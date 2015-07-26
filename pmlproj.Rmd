@@ -111,17 +111,17 @@ Our plot of the model shows that much of the contribution to prediction is comin
 
 ### Tuning our GBM for parsimony in final model fit
 
-We select for the predictors that have an importance higher than 30, since we observed from the plot above a diminishing contribution beyond that point. Since we had used only a subsample (10% of the training data set) in order to determine the features to be used, we now fit our final model with 10-fold cross-validation using the remaining 90% of the training data (previously stored as *trainingFinal*).
+We select for the predictors that have an importance higher than 30, since we observed from the plot above a diminishing contribution beyond that point. Since we had used only a subsample (10% of the training data set) in order to determine the features to be used, we now fit our final model with 3-fold cross-validation (not too many to reduce chance of overfitting) using the remaining 90% of the training data (previously stored as *trainingFinal*).
 ```{r cull_gbm_vimp}
 # Cull using relative importance higher than 30
-trainingCulled <- trainingFinal[, v$importance[,1]>=30]
+trainingCulled <- trainingFinal[, v$importance[,1]>=25]
 names(trainingCulled[,-dim(trainingCulled)])
 # Fit our final model with 10-fold cross-validation
-fitControl <- trainControl(## 10-fold CV
+fitControl <- trainControl(## 3-fold CV
                            method = "repeatedcv",
-                           number = 10,
-                           ## repeated ten times
-                           repeats = 10)
+                           number = 3,
+                           ## repeated 3 times
+                           repeats = 3)
 modGBMculled <- train(classe~., method="gbm", data=trainingCulled, trControl = fitControl, verbose=FALSE)
 prediction <- predict(modGBMculled, testing)
 ```
