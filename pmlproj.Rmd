@@ -51,20 +51,20 @@ df.train <- df.train[,-col_excel]
 df.train[colMeans(is.na(df.train))>0.9] <- list(NULL)
 ```
 + Variables that have a higher than 90% correlation with another within the dataset are also removed, on the premise that because of this high correlation, simply using one of each pair of correlated variables will capture a large amount of variability in the response variable (hopefully!).
-```{r transform_data_drop_correlated}
+```{r transform_data_drop_correlated, cache=TRUE}
 library(caret)
 # Removal of highly correlated variables using cor()
 correlated <- findCorrelation(cor(df.train[-dim(df.train)]), cutoff=0.9)
 df.train <- df.train[,-correlated]
 ```
 + Use of the nearZeroVar function from *caret* indicated that there was nothing left to cull since there were no variables left that exhibit the two characteristics worth reducing (either too few unique values or variance in values).
-```{r transform_data_zeroVar}
+```{r transform_data_zeroVar, cache=TRUE}
 # Removal of variables with near zer
 zVal <- nearZeroVar(df.train, saveMetrics=TRUE) # for metrics
 print(zVal)
 ```
 + Our training and testing sets are then allocated as 70/30 from the training data given.
-```{r transform_data_subset_traintest}
+```{r transform_data_subset_traintest, cache=TRUE}
 trainIndex <- createDataPartition(df.train$classe, p=0.7, list=FALSE)
 training <- df.train[trainIndex,]
 testing <- df.train[-trainIndex,]
@@ -74,7 +74,7 @@ Our training/testing sets thus consist of a shortlist of `r dim(training)[2]` pr
 ### Building preliminary decision tree to investigate the data set
 
 Instead of directly training a model from the training set, we use a small subsample from the training set to investigate if heretofore unobserved characteristics of the dataset would favour or hinder various model types. They can also be used to cut down on the number of features in the final model, by checking each features' importance relative to the next. We set a seed from this point on to ensure reproducibility.
-```{r prelim_model_investigation}
+```{r prelim_model_investigation, cache=TRUE}
 # Sets a seed
 set.seed(55455)
 # Using smaller subsample of 10% of the training data
@@ -87,7 +87,7 @@ sub2 <- sub1[-subIndex2,]
 sub1 <- sub1[subIndex2,]
 ```
 Using the subsamples we created, we build a basic classification tree to get a feel for the baseline accuracy, and perform 10 cross-validations on the model.
-```{r rpart_baseline}
+```{r rpart_baseline, cache=TRUE}
 library(rpart)
 # Setting xval=10 to perform 5 cross-validations
 modRpart <- train(classe~., method="rpart", control=rpart.control(xval=5, minsplit=15, minbucket=5, cp=0.01, maxdepth=15), data=sub1)
@@ -98,11 +98,16 @@ Our confusion matrix shows this model to have an accuracy not much better than a
 
 ### Using a gradient boosted model to check variable importance
 
-We proceed to use a different boosting model in order to improve on our decision tree. Using **gbm** we can check variable importance relative to other predictors out of the box. 
-```{r fit_gbm}
+We proceed to use a different boosting model in order to improve on our decision tree. Using **gbm** we can check variable importance relative to other predictors out of the box. We do this along with 3-fold cross-validation (not too many to reduce chance of overfitting).
+```{r fit_gbm, cache=TRUE}
 library(gbm); library(survival); library(splines)
 library(plyr); library(parallel)
-modGBM <- train(classe~., method="gbm", data=sub1, verbose=FALSE)
+fitControl <- trainControl(## 3-fold CV
+                           method = "repeatedcv",
+                           number = 3,
+                           ## repeated 3 times
+                           repeats = 3)
+modGBM <- train(classe~., method="gbm", data=sub1, trControl=fitControl, verbose=FALSE)
 confusionMatrix(sub2$classe, predict(modGBM, sub2))
 v <- varImp(modGBM) ; plot(v, main="Variable Importance of GBM features")
 ```
@@ -111,24 +116,19 @@ Our plot of the model shows that much of the contribution to prediction is comin
 
 ### Tuning our GBM for parsimony in final model fit
 
-We select for the predictors that have an importance higher than 30, since we observed from the plot above a diminishing contribution beyond that point. Since we had used only a subsample (10% of the training data set) in order to determine the features to be used, we now fit our final model with 3-fold cross-validation (not too many to reduce chance of overfitting) using the remaining 90% of the training data (previously stored as *trainingFinal*).
-```{r cull_gbm_vimp}
-# Cull using relative importance higher than 30
-trainingCulled <- trainingFinal[, v$importance[,1]>=25]
+We select for the predictors that have an importance higher than 20, since we observed from the plot above a diminishing contribution beyond that point. Since we had used only a subsample (10% of the training data set) in order to determine the features to be used, we now fit our final model using the remaining 90% of the training data (previously stored as *trainingFinal*).
+```{r cull_gbm_vimp, cache=TRUE}
+# Cull using relative importance higher than 20
+trainingCulled <- trainingFinal[, v$importance[,1]>=20]
 names(trainingCulled[,-dim(trainingCulled)])
-# Fit our final model with 10-fold cross-validation
-fitControl <- trainControl(## 3-fold CV
-                           method = "repeatedcv",
-                           number = 3,
-                           ## repeated 3 times
-                           repeats = 3)
+# Fit our final model with 3-fold cross-validation
 modGBMculled <- train(classe~., method="gbm", data=trainingCulled, trControl = fitControl, verbose=FALSE)
 prediction <- predict(modGBMculled, testing)
 ```
 
 ### Accuracy and Error
 Our model with `r ncol(trainingCulled)-1` predictors (minus the target variable itself) can now be used on the testing data that we set aside previously in order to obtain the unbiased out-of-sample error rate. 
-```{r error_calc}
+```{r error_calc, cache=TRUE}
 confusionMatrix(testing$classe, prediction)
 errorEst <- sum(prediction != testing$classe)/length(testing$classe)
 ```
@@ -160,11 +160,12 @@ ptree <- prune(modCart2, cp=modCart2$cptable[which.min(modCart2$cptable[,"xerror
 
 ### Project Repo and References
 
-+ All files and full code used are available from my [Github Project Repository](https://github.com/slothdev/PMLproj-Repo) (https://github.com/slothdev/PMLproj-Repo)
++ All files and full code used are available from my [Github Project Repository](https://github.com/slothdev/pmlproj) (https://github.com/slothdev/pmlproj)
 + [Weight Lifting Exercises Dataset](http://groupware.les.inf.puc-rio.br/har)
 + [Training data used](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
 + [Testing Data used](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
 + Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. [Qualitative Activity Recognition of Weight Lifting Exercises](http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201). Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
 
-All rights reserved.
+All rights reserved.  
+
 ### END
